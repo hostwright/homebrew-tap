@@ -1,0 +1,66 @@
+name: Formula
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  attestations: read
+
+jobs:
+  formula:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HOMEBREW_DEVELOPER: "1"
+      HOMEBREW_NO_AUTOREMOVE: "1"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Register the reviewed checkout as a tap
+        run: |
+          brew tap --custom-remote hostwright/tap "file://$GITHUB_WORKSPACE"
+          brew trust --tap hostwright/tap
+
+      - name: Verify formula provenance and policy
+        run: |
+          set -euo pipefail
+          cd "$(brew --repository hostwright/tap)"
+          gh attestation verify Formula/hostwright.rb \
+            --repo hostwright/hostwright \
+            --signer-workflow hostwright/hostwright/.github/workflows/trusted-release.yml \
+            --source-ref refs/heads/main
+          brew ruby -- -c Formula/hostwright.rb
+          brew style --formula Formula/hostwright.rb
+          brew audit --strict --formula hostwright/tap/hostwright
+
+      - name: Install and test
+        run: |
+          set -euo pipefail
+          cd "$(brew --repository hostwright/tap)"
+          brew install --formula Formula/hostwright.rb
+          brew test hostwright
+          hostwright --version
+          hostwright capabilities --json
+
+      - name: Uninstall and verify cleanup
+        if: always()
+        run: |
+          brew services stop hostwright >/dev/null 2>&1 || true
+          brew uninstall --force hostwright >/dev/null 2>&1 || true
+          remaining=0
+          for executable in hostwright hostwright-control hostwright-dist hostwrightd; do
+            if command -v "$executable" >/dev/null 2>&1; then
+              echo "$executable remains installed" >&2
+              remaining=1
+            fi
+          done
+          brew untrust --tap hostwright/tap >/dev/null 2>&1 || true
+          brew untap --force hostwright/tap >/dev/null 2>&1 || true
+          exit "$remaining"
