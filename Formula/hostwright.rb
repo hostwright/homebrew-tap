@@ -1,9 +1,9 @@
 class Hostwright < Formula
   desc "Mac-native desired-state control plane for Apple container workloads"
   homepage "https://hostwright.dev"
-  url "https://github.com/hostwright/hostwright/releases/download/v0.0.2-dev.9/hostwright-0.0.2-dev.9-macos-arm64-77e6212b5132.zip"
-  version "0.0.2-dev.9"
-  sha256 "6bf3a27441da1c8637fed887212ba8f69a0989f7b383221c26cd946f8d8e6866"
+  url "https://github.com/hostwright/hostwright/releases/download/v0.0.2-dev.10/hostwright-0.0.2-dev.10-macos-arm64-37c29cedbf67.zip"
+  version "0.0.2-dev.10"
+  sha256 "87b17f01f1b4d5769939acd578ecb003cc28a4f01a2059967ff5a72872f9b08d"
   license "Apache-2.0"
 
   depends_on arch: :arm64
@@ -44,6 +44,6 @@ class Hostwright < Formula
     assert_equal version.to_s, shell_output("#{bin}/hostwrightd --version").strip
     capabilities = shell_output("#{bin}/hostwright capabilities --json")
     assert_match '"schemaVersion":1', capabilities
-    assert_match '"productVersion":"0.0.2-dev.9"', capabilities
+    assert_match '"productVersion":"0.0.2-dev.10"', capabilities
   end
 end
