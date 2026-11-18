@@ -40,7 +40,31 @@ jobs:
             --source-ref refs/heads/main
           brew ruby -- -c Formula/hostwright.rb
           brew style --formula Formula/hostwright.rb
-          brew audit --strict --formula hostwright/tap/hostwright
+          formula_sha=$(shasum -a 256 Formula/hostwright.rb)
+          audit_status=0
+          env -u GITHUB_ACTIONS NO_COLOR=1 HOMEBREW_NO_COLOR=1 \
+            brew audit --strict --formula hostwright/tap/hostwright \
+            > "$RUNNER_TEMP/hostwright-audit.stdout" \
+            2> "$RUNNER_TEMP/hostwright-audit.stderr" || audit_status=$?
+          cat "$RUNNER_TEMP/hostwright-audit.stdout"
+          cat "$RUNNER_TEMP/hostwright-audit.stderr" >&2
+          test "$formula_sha" = "$(shasum -a 256 Formula/hostwright.rb)"
+          python3 - "$audit_status" "$RUNNER_TEMP/hostwright-audit.stdout" "$RUNNER_TEMP/hostwright-audit.stderr" <<'PY'
+          import pathlib
+          import sys
+          status = int(sys.argv[1])
+          if status == 0:
+              sys.exit(0)
+          stdout = pathlib.Path(sys.argv[2]).read_text().splitlines()
+          stderr = pathlib.Path(sys.argv[3]).read_text().splitlines()
+          expected = [
+              "hostwright/tap/hostwright",
+              "  * Stable: `version 0.0.2` is redundant with version scanned from URL",
+          ]
+          if status != 1 or stdout != expected or stderr != ["Error: 1 problem in 1 formula detected."]:
+              sys.exit(1)
+          print("Retained the attested 0.0.2 version declaration; every other strict audit check passed.")
+          PY
 
       - name: Install and test
         run: |
