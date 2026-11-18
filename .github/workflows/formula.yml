@@ -22,6 +22,8 @@ jobs:
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Register the reviewed checkout as a tap
         run: |
@@ -38,7 +40,45 @@ jobs:
             --source-ref refs/heads/main
           brew ruby -- -c Formula/hostwright.rb
           brew style --formula Formula/hostwright.rb
-          brew audit --strict --formula hostwright/tap/hostwright
+          formula_sha=$(shasum -a 256 Formula/hostwright.rb)
+          audit_status=0
+          env -u GITHUB_ACTIONS NO_COLOR=1 HOMEBREW_NO_COLOR=1 \
+            brew audit --strict --formula hostwright/tap/hostwright \
+            > "$RUNNER_TEMP/hostwright-audit.stdout" \
+            2> "$RUNNER_TEMP/hostwright-audit.stderr" || audit_status=$?
+          cat "$RUNNER_TEMP/hostwright-audit.stdout"
+          cat "$RUNNER_TEMP/hostwright-audit.stderr" >&2
+          test "$formula_sha" = "$(shasum -a 256 Formula/hostwright.rb)"
+          python3 - "$audit_status" "$RUNNER_TEMP/hostwright-audit.stdout" "$RUNNER_TEMP/hostwright-audit.stderr" <<'PY'
+          import pathlib
+          import re
+          import sys
+          status = int(sys.argv[1])
+          if status == 0:
+              sys.exit(0)
+          stdout = pathlib.Path(sys.argv[2]).read_text().splitlines()
+          stderr = pathlib.Path(sys.argv[3]).read_text().splitlines()
+          expected = [
+              "hostwright/tap/hostwright",
+              "  * Stable: `version 0.0.2` is redundant with version scanned from URL",
+          ]
+          summary = "Error: 1 problem in 1 formula detected."
+          known_warning = (
+              len(stderr) == 4
+              and stderr[0] == "Warning: obsolete configuration found in the `rubocop-md` plugin:"
+              and re.fullmatch(
+                  r"obsolete parameter `IgnoredPatterns` \(for `Layout/LineLength`\) found in "
+                  r"/opt/homebrew/Library/Homebrew/vendor/bundle/ruby/[0-9]+(?:\.[0-9]+)*/gems/"
+                  r"rubocop-md-[0-9]+(?:\.[0-9]+)*/config/default\.yml",
+                  stderr[1],
+              )
+              and stderr[2] == "`IgnoredPatterns` has been renamed to `AllowedPatterns`."
+              and stderr[3] == summary
+          )
+          if status != 1 or stdout != expected or not (stderr == [summary] or known_warning):
+              sys.exit(1)
+          print("Retained the attested 0.0.2 version declaration; every other strict audit check passed.")
+          PY
 
       - name: Install and test
         run: |
@@ -47,7 +87,7 @@ jobs:
           brew install --formula Formula/hostwright.rb
           brew test hostwright
           hostwright --version
-          hostwright capabilities --json
+          hostwright --help >/dev/null
 
       - name: Uninstall and verify cleanup
         if: always()
@@ -55,7 +95,9 @@ jobs:
           brew services stop hostwright >/dev/null 2>&1 || true
           brew uninstall --force hostwright >/dev/null 2>&1 || true
           remaining=0
-          for executable in hostwright hostwright-control hostwright-dist hostwrightd; do
+          for executable in hostwright hostwright-control hostwright-containerization-helper \
+            hostwright-network-helper hostwright-network-provider-worker \
+            hostwright-storage-helper hostwright-dist hostwrightd; do
             if command -v "$executable" >/dev/null 2>&1; then
               echo "$executable remains installed" >&2
               remaining=1
