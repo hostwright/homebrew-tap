@@ -51,6 +51,7 @@ jobs:
           test "$formula_sha" = "$(shasum -a 256 Formula/hostwright.rb)"
           python3 - "$audit_status" "$RUNNER_TEMP/hostwright-audit.stdout" "$RUNNER_TEMP/hostwright-audit.stderr" <<'PY'
           import pathlib
+          import re
           import sys
           status = int(sys.argv[1])
           if status == 0:
@@ -61,7 +62,20 @@ jobs:
               "hostwright/tap/hostwright",
               "  * Stable: `version 0.0.2` is redundant with version scanned from URL",
           ]
-          if status != 1 or stdout != expected or stderr != ["Error: 1 problem in 1 formula detected."]:
+          summary = "Error: 1 problem in 1 formula detected."
+          known_warning = (
+              len(stderr) == 4
+              and stderr[0] == "Warning: obsolete configuration found in the `rubocop-md` plugin:"
+              and re.fullmatch(
+                  r"obsolete parameter `IgnoredPatterns` \(for `Layout/LineLength`\) found in "
+                  r"/opt/homebrew/Library/Homebrew/vendor/bundle/ruby/[0-9]+(?:\.[0-9]+)*/gems/"
+                  r"rubocop-md-[0-9]+(?:\.[0-9]+)*/config/default\.yml",
+                  stderr[1],
+              )
+              and stderr[2] == "`IgnoredPatterns` has been renamed to `AllowedPatterns`."
+              and stderr[3] == summary
+          )
+          if status != 1 or stdout != expected or not (stderr == [summary] or known_warning):
               sys.exit(1)
           print("Retained the attested 0.0.2 version declaration; every other strict audit check passed.")
           PY
