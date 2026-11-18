@@ -22,6 +22,8 @@ jobs:
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Register the reviewed checkout as a tap
         run: |
@@ -47,7 +49,7 @@ jobs:
           brew install --formula Formula/hostwright.rb
           brew test hostwright
           hostwright --version
-          hostwright capabilities --json
+          hostwright --help >/dev/null
 
       - name: Uninstall and verify cleanup
         if: always()
@@ -55,7 +57,9 @@ jobs:
           brew services stop hostwright >/dev/null 2>&1 || true
           brew uninstall --force hostwright >/dev/null 2>&1 || true
           remaining=0
-          for executable in hostwright hostwright-control hostwright-dist hostwrightd; do
+          for executable in hostwright hostwright-control hostwright-containerization-helper \
+            hostwright-network-helper hostwright-network-provider-worker \
+            hostwright-storage-helper hostwright-dist hostwrightd; do
             if command -v "$executable" >/dev/null 2>&1; then
               echo "$executable remains installed" >&2
               remaining=1
